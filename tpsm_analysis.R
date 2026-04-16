@@ -521,4 +521,4 @@ cat("\nPC1 is most strongly driven by:",
 cat("PC2 is most strongly driven by:",
     rownames(var_contrib)[which.max(var_contrib[, 2])], "\n")
 
-
+#Inferential Statistics
