@@ -9,7 +9,7 @@ if (length(new_pkg) > 0) install.packages(new_pkg, dependencies = TRUE)
 lapply(packages, library, character.only = TRUE)
 
 # Load & Rename Columns
-df_raw <- read_excel("C:/Users/User/Documents/3rd year/Y3S2/TPSM/dax.xlsx")
+df_raw <- read_excel("dax.xlsx")
 
 df <- df_raw %>%
   rename(
