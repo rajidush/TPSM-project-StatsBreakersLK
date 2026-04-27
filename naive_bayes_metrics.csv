@@ -1,0 +1,2 @@
+"Model","Accuracy","Accuracy_Percentage","Kappa","Sensitivity","Specificity"
+"Naive Bayes",0.677733257012021,67.773325701202,0.0447868603455256,0.951505016722408,0.0834845735027223

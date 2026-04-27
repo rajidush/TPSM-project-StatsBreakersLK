@@ -1,0 +1,4 @@
+"Model","Main_Task","Main_Metric","Result"
+"OLR","Predict CSAT level","Derived Accuracy","61.26%"
+"Time Series ARIMA","Forecast future CSAT","RMSE","0.1615"
+"Naive Bayes","Classify Good/Poor CSAT","Accuracy","67.77%"
