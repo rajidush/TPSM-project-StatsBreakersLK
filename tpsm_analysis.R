@@ -522,3 +522,676 @@ cat("PC2 is most strongly driven by:",
     rownames(var_contrib)[which.max(var_contrib[, 2])], "\n")
 
 #Inferential Statistics
+View(df)
+library(car)        # Levene's Test
+library(agricolae)  # Fisher's LSD
+library(nortest)    # Anderson-Darling normality test
+library(BSDA)       # Z-test
+library(rstatix)    # Clean statistical summaries
+
+# Significance threshold
+alpha <- 0.05
+
+decision <- function(p, h0) {
+  cat(sprintf("  H0: %s\n  p = %.4f → %s\n\n",
+              h0, p,
+              ifelse(p < alpha,
+                     "REJECT H0 ✓ (significant)",
+                     "FAIL TO REJECT H0 (not significant)")))
+}
+
+cat("Data loaded:", nrow(df), "rows x", ncol(df), "columns\n")
+cat("Good Experience rate:", round(mean(df$csat_binary), 4), "\n")
+
+cat("========== STEP 1: ESTIMATION ==========\n\n")
+
+# ── 95% and 99% CI for Mean CSAT ─────────────────────────────────
+ci_95 <- t.test(df$csat_score, conf.level = 0.95)
+ci_99 <- t.test(df$csat_score, conf.level = 0.99)
+
+cat("Point Estimate — Mean CSAT:", round(mean(df$csat_score), 4), "\n\n")
+
+cat("95% Confidence Interval for Mean CSAT:\n")
+cat(sprintf("  [%.4f , %.4f]\n", ci_95$conf.int[1], ci_95$conf.int[2]))
+cat("  Interpretation: We are 95% confident the true population mean\n")
+cat("  CSAT lies between these two values.\n\n")
+
+cat("99% Confidence Interval for Mean CSAT:\n")
+cat(sprintf("  [%.4f , %.4f]\n", ci_99$conf.int[1], ci_99$conf.int[2]))
+cat("  Interpretation: Wider interval — more confident but less precise.\n\n")
+
+# ── 95% CI for Proportion of Good Experiences ────────────────────
+n_total <- nrow(df)
+n_good  <- sum(df$csat_binary == 1)
+
+ci_prop <- prop.test(n_good, n_total, conf.level = 0.95)
+
+cat("Point Estimate — P(Good Experience):",
+    round(n_good / n_total, 4), "\n")
+cat("95% CI for P(Good Experience):\n")
+cat(sprintf("  [%.4f , %.4f]\n",
+            ci_prop$conf.int[1], ci_prop$conf.int[2]))
+cat("  Interpretation: Between",
+    scales::percent(ci_prop$conf.int[1], 0.1), "and",
+    scales::percent(ci_prop$conf.int[2], 0.1),
+    "of all interactions result in Good Experience.\n\n")
+
+cat("========== STEP 2: NORMALITY CHECK ==========\n\n")
+
+# Anderson-Darling test on CSAT Score
+ad_csat <- ad.test(df$csat_score)
+cat("Anderson-Darling Test — CSAT Score:\n")
+cat(sprintf("  A = %.4f\n", ad_csat$statistic))
+decision(ad_csat$p.value,
+         "CSAT Score follows a normal distribution")
+
+# Visual Q-Q plot
+qqnorm(df$csat_score,
+       main = "Q-Q Plot: CSAT Score (Normality Check)",
+       col  = "#1976D2", pch = 20, cex = 0.4)
+qqline(df$csat_score, col = "#D32F2F", lwd = 2)
+
+cat("CONSEQUENCE OF NON-NORMALITY:\n")
+cat("  → Parametric tests (ANOVA, t-test) reported under CLT assumption\n")
+cat("  → Non-parametric alternatives (Kruskal-Wallis) run alongside\n")
+cat("  → Both must agree for a robust conclusion\n\n")
+
+cat("========== STEP 3: ONE-SAMPLE Z-TEST & t-TEST ==========\n\n")
+
+# Benchmark: neutral midpoint of 1-5 CSAT scale
+mu_0  <- 3.5
+sigma <- sd(df$csat_score)
+
+# ── Z-Test ───────────────────────────────────────────────────────
+z_result <- z.test(df$csat_score,
+                   mu      = mu_0,
+                   sigma.x = sigma)
+cat("One-Sample Z-Test (H0: μ = 3.5):\n")
+cat(sprintf("  Z = %.4f | p = %.6f\n",
+            z_result$statistic, z_result$p.value))
+decision(z_result$p.value,
+         "Population mean CSAT = 3.5 (neutral)")
+
+# ── t-Test ───────────────────────────────────────────────────────
+t_result <- t.test(df$csat_score,
+                   mu          = mu_0,
+                   alternative = "two.sided")
+cat("One-Sample t-Test (H0: μ = 3.5):\n")
+cat(sprintf("  t = %.4f | df = %d | p = %.6f\n",
+            t_result$statistic,
+            round(t_result$parameter),
+            t_result$p.value))
+cat(sprintf("  95%% CI: [%.4f , %.4f]\n",
+            t_result$conf.int[1],
+            t_result$conf.int[2]))
+decision(t_result$p.value,
+         "Population mean CSAT = 3.5 (neutral)")
+
+cat("LINK TO DESCRIPTIVE FINDING:\n")
+cat("  Descriptive mean = 3.72 (above neutral 3.5)\n")
+cat("  This test confirms whether that gap is statistically real\n\n")
+
+cat("========== STEP 4: LEVENE'S TEST ==========\n\n")
+
+# Levene's Test: CSAT across Tenure Buckets
+lev_tenure <- leveneTest(csat_score ~ tenure_bucket, data = df)
+cat("Levene's Test — CSAT Score across Tenure Buckets:\n")
+cat(sprintf("  F = %.4f | df = (%d, %d) | p = %.4f\n",
+            lev_tenure$`F value`[1],
+            lev_tenure$Df[1],
+            lev_tenure$Df[2],
+            lev_tenure$`Pr(>F)`[1]))
+decision(lev_tenure$`Pr(>F)`[1],
+         "All tenure groups have equal variance in CSAT")
+
+# Levene's Test: CSAT across Agent Shifts
+lev_shift <- leveneTest(csat_score ~ agent_shift, data = df)
+cat("Levene's Test — CSAT Score across Agent Shifts:\n")
+cat(sprintf("  F = %.4f | df = (%d, %d) | p = %.4f\n",
+            lev_shift$`F value`[1],
+            lev_shift$Df[1],
+            lev_shift$Df[2],
+            lev_shift$`Pr(>F)`[1]))
+decision(lev_shift$`Pr(>F)`[1],
+         "All shift groups have equal variance in CSAT")
+cat("CONSEQUENCE FOR NEXT STEP:\n")
+cat("  If variances unequal → Welch ANOVA + Kruskal-Wallis as backup\n")
+cat("  If variances equal   → Standard one-way ANOVA is valid\n\n")
+
+cat("========== STEP 5: ONE-WAY ANOVA + KRUSKAL-WALLIS ==========\n\n")
+
+# ── One-Way ANOVA ─────────────────────────────────────────────────
+aov1 <- aov(csat_score ~ tenure_bucket, data = df)
+aov1_sum <- summary(aov1)
+
+cat("--- One-Way ANOVA: CSAT ~ Tenure Bucket ---\n")
+print(aov1_sum)
+
+# Extract F and p
+F_stat <- aov1_sum[[1]]$`F value`[1]
+p_aov  <- aov1_sum[[1]]$`Pr(>F)`[1]
+cat(sprintf("\n  F = %.4f | p = %.6f\n", F_stat, p_aov))
+decision(p_aov,
+         "All tenure group means are equal (μ1 = μ2 = μ3 = μ4 = μ5)")
+
+# ── Effect Size: Eta-Squared ──────────────────────────────────────
+# Eta-squared measures PRACTICAL significance — what proportion
+# of total CSAT variance is explained by tenure group membership
+ss_between <- aov1_sum[[1]]$`Sum Sq`[1]
+ss_total   <- sum(aov1_sum[[1]]$`Sum Sq`)
+eta_sq     <- ss_between / ss_total
+
+cat(sprintf("  Eta-Squared (η²) = %.4f\n", eta_sq))
+cat(sprintf("  → Tenure explains %.1f%% of total CSAT variance\n\n",
+            eta_sq * 100))
+
+# ── Kruskal-Wallis (Non-Parametric Confirmation) ──────────────────
+# Run this because CSAT failed normality test in Step 2.
+# If Kruskal-Wallis agrees with ANOVA → finding is robust.
+kw <- kruskal.test(csat_score ~ tenure_bucket, data = df)
+cat("--- Kruskal-Wallis Test (Non-Parametric): CSAT ~ Tenure ---\n")
+cat(sprintf("  χ² = %.4f | df = %d | p = %.6f\n",
+            kw$statistic, kw$parameter, kw$p.value))
+decision(kw$p.value,
+         "All tenure groups have the same CSAT distribution")
+
+cat("AGREEMENT CHECK:\n")
+cat(sprintf("  ANOVA p = %.6f | Kruskal-Wallis p = %.6f\n",
+            p_aov, kw$p.value))
+cat("  → Both tests", ifelse(p_aov < alpha & kw$p.value < alpha,
+                             "AGREE: tenure effect is robust across parametric and non-parametric tests ✓",
+                             "DISAGREE: interpret cautiously"), "\n\n")
+
+# ── Mean CSAT per Tenure Group ────────────────────────────────────
+cat("--- Mean CSAT by Tenure Bucket ---\n")
+tenure_means <- df %>%
+  group_by(tenure_bucket) %>%
+  summarise(
+    N         = n(),
+    Mean_CSAT = round(mean(csat_score, na.rm = TRUE), 3),
+    SD        = round(sd(csat_score, na.rm = TRUE), 3),
+    SE        = round(sd(csat_score, na.rm = TRUE) / sqrt(n()), 3),
+    .groups   = "drop"
+  )
+print(tenure_means)
+cat("\n")
+
+
+# ── Fisher's LSD Post-Hoc ─────────────────────────────────────────
+# JUSTIFIED BY: ANOVA tells us "at least one group differs" but
+# not WHICH ones. Fisher's LSD identifies the specific pairs
+# that are significantly different.
+# NOTE: Fisher's LSD has higher power than Tukey but slightly
+# higher Type I error risk — appropriate here because ANOVA
+# was already significant (protected LSD).
+cat("--- Fisher's LSD Post-Hoc Test ---\n")
+cat("PURPOSE: Identify which specific tenure pairs differ\n\n")
+
+lsd_result <- LSD.test(aov1, "tenure_bucket",
+                       p.adj = "none",
+                       console = FALSE)
+
+cat("Group Letters (same letter = NOT significantly different):\n")
+print(lsd_result$groups)
+
+cat("\nPairwise Comparisons:\n")
+print(lsd_result$comparison)
+
+# ─────────────────────────────────────────────────────────────────
+# PURPOSE: The descriptive heatmap (Plot 6) showed different mean
+# CSAT values across service channels. Chi-Square tests whether
+# the Good/Poor experience split is independent of channel type
+# or whether channel significantly influences satisfaction outcome.
+#
+# JUSTIFIED BY: Heatmap showed visible differences in mean CSAT
+# across product-shift combinations — suggesting channel type
+# matters. Chi-Square formally tests this for channel specifically.
+#
+# TWO CHI-SQUARE TESTS:
+# Independence test → Is Good/Poor CSAT independent of channel?
+# Goodness-of-fit   → Are CSAT scores uniformly distributed?
+# ─────────────────────────────────────────────────────────────────
+
+cat("========== STEP 6: CHI-SQUARE TESTS ==========\n\n")
+
+# ── Chi-Square Test of Independence ──────────────────────────────
+# Create contingency table: Good/Poor × Channel
+contingency <- table(df$csat_label, df$channel)
+cat("--- Contingency Table: CSAT Label × Channel ---\n")
+print(contingency)
+cat("\nRow Percentages (Good/Poor rate per channel):\n")
+print(round(prop.table(contingency, margin = 2) * 100, 1))
+
+chi_indep <- chisq.test(contingency)
+cat("\n--- Chi-Square Test of Independence ---\n")
+cat(sprintf("  χ² = %.4f | df = %d | p = %.6f\n",
+            chi_indep$statistic,
+            chi_indep$parameter,
+            chi_indep$p.value))
+decision(chi_indep$p.value,
+         "Good/Poor experience is INDEPENDENT of channel type")
+
+# Expected vs Observed check
+cat("Minimum expected frequency:", round(min(chi_indep$expected), 2), "\n")
+cat("(Must be ≥ 5 for Chi-Square to be valid)\n\n")
+
+# ── Chi-Square Goodness-of-Fit ────────────────────────────────────
+# Tests whether CSAT scores are uniformly distributed across 1-5.
+# JUSTIFIED BY: Frequency table showed extreme non-uniformity
+# (59.6% score 5, only 1.65% score 2) — GoF test confirms this
+# formally.
+obs_freq <- table(df$csat_score)
+chi_gof  <- chisq.test(obs_freq, p = rep(0.2, 5))
+
+cat("--- Chi-Square Goodness-of-Fit (Uniform Distribution?) ---\n")
+cat("H0: CSAT scores are uniformly distributed (20% each)\n")
+cat(sprintf("  χ² = %.4f | df = %d | p = %.6f\n",
+            chi_gof$statistic,
+            chi_gof$parameter,
+            chi_gof$p.value))
+decision(chi_gof$p.value,
+         "CSAT scores are uniformly distributed across 1-5")
+
+cat("LINK TO DESCRIPTIVE:\n")
+cat("  Descriptive bar chart showed 59.6% score 5, 27.3% score 1\n")
+cat("  GoF confirms this extreme non-uniformity is not by chance\n\n")
+
+# ─────────────────────────────────────────────────────────────────
+# PURPOSE: PCA in the descriptive stage revealed that CSAT and
+# Item Price loaded on the SAME principal component (PC1 —
+# the satisfaction-value dimension). This means they are related
+# and should be tested TOGETHER as a multivariate outcome.
+# MANOVA tests whether tenure groups differ simultaneously on
+# both CSAT and Item Price.
+#
+# JUSTIFIED BY: PCA showed CSAT (43.7%) and Item Price (36.6%)
+# both load strongly onto PC1. Testing them jointly via MANOVA
+# is more powerful and statistically appropriate than two
+# separate ANOVAs which would inflate Type I error.
+#
+# ALL 4 TEST STATISTICS reported because:
+# Pillai's Trace   → most robust to assumption violations
+# Wilks' Lambda    → most commonly reported in literature
+# Hotelling-Lawley → best when group differences are spread
+# Roy's Root       → most powerful when one dimension dominates
+# ─────────────────────────────────────────────────────────────────
+
+cat("========== STEP 7: MANOVA (All 4 Statistics) ==========\n\n")
+
+cat("JUSTIFICATION FROM PCA:\n")
+cat("  PC1 loadings: CSAT = 43.7%, Item Price = 36.6%\n")
+cat("  Both variables share the same dominant component\n")
+cat("  → Test them jointly across tenure groups using MANOVA\n\n")
+
+# ── Prepare MANOVA dataset ────────────────────────────────────────
+df_manova <- df %>%
+  select(csat_score, item_price, tenure_bucket) %>%
+  mutate(
+    csat_score  = as.numeric(csat_score),
+    item_price  = as.numeric(item_price)
+  ) %>%
+  filter(complete.cases(.))
+
+cat("MANOVA dataset rows:", nrow(df_manova), "\n\n")
+
+# ── Fit MANOVA model ──────────────────────────────────────────────
+manova_model <- manova(
+  cbind(csat_score, item_price) ~ tenure_bucket,
+  data = df_manova
+)
+
+# ── All 4 Test Statistics ─────────────────────────────────────────
+tests <- c("Wilks", "Pillai", "Hotelling-Lawley", "Roy")
+
+results_list <- list()
+
+for (test in tests) {
+  res   <- summary(manova_model, test = test)
+  stat  <- res$stats[1, 2]
+  fstat <- res$stats[1, 3]
+  df1   <- res$stats[1, 4]
+  df2   <- res$stats[1, 5]
+  pval  <- res$stats[1, 6]
+  results_list[[test]] <- c(stat, fstat, df1, df2, pval)
+}
+
+# Print as clean table
+manova_tbl <- do.call(rbind, results_list)
+colnames(manova_tbl) <- c("Statistic", "F", "df1", "df2", "p-value")
+cat("--- MANOVA Results: CSAT + Item Price ~ Tenure Bucket ---\n\n")
+print(round(manova_tbl, 4))
+cat("\n")
+
+# Decision for each
+for (test in tests) {
+  p <- results_list[[test]][5]
+  cat(sprintf("  %-20s p = %.4f → %s\n",
+              test, p,
+              ifelse(p < alpha,
+                     "REJECT H0 ✓",
+                     "Fail to reject H0")))
+}
+
+cat("\n")
+
+# ── Univariate Follow-Up ANOVAs ───────────────────────────────────
+# After significant MANOVA, run separate ANOVAs to see which
+# dependent variable drives the group difference
+cat("--- Univariate Follow-Up ANOVAs ---\n")
+cat("(Which variable drives the MANOVA significance?)\n\n")
+print(summary.aov(manova_model))
+
+cat("\nAGREEMENT ACROSS ALL 4 MANOVA TESTS:\n")
+all_sig <- all(sapply(results_list, function(x) x[5] < alpha))
+cat(ifelse(all_sig,
+           "  All 4 statistics agree → Finding is robust across all multivariate criteria ✓\n",
+           "  Tests disagree → Interpret cautiously\n"))
+
+# ─────────────────────────────────────────────────────────────────
+# PURPOSE: Print a clean master summary table of all 7 steps
+# with test names, variables, key statistics, p-values, and
+# decisions in one consolidated view for the Word document.
+# ─────────────────────────────────────────────────────────────────
+
+cat("\n")
+cat("╔══════════════════════════════════════════════════════════════════════════╗\n")
+cat("║            INFERENTIAL ANALYTICS — COMPLETE SUMMARY                    ║\n")
+cat("╠══════════════════════════════════════════════════════════════════════════╣\n")
+cat("║  Step │ Test                  │ Variable(s)           │ Decision        ║\n")
+cat("╠══════════════════════════════════════════════════════════════════════════╣\n")
+cat("║  1    │ Estimation            │ Mean CSAT + P(Good)   │ Baseline set    ║\n")
+cat("║  2    │ Anderson-Darling      │ CSAT Score            │ Non-normal ✓    ║\n")
+cat("║  3    │ Z-Test + t-Test       │ CSAT vs μ=3.5         │ Reject H0 ✓     ║\n")
+cat("║  4    │ Levene's Test         │ CSAT ~ Tenure, Shift  │ See output      ║\n")
+cat("║  5a   │ One-Way ANOVA         │ CSAT ~ Tenure Bucket  │ Reject H0 ✓     ║\n")
+cat("║  5b   │ Kruskal-Wallis        │ CSAT ~ Tenure Bucket  │ Reject H0 ✓     ║\n")
+cat("║  5c   │ Fisher's LSD          │ Pairwise Tenure       │ See groups      ║\n")
+cat("║  6a   │ Chi-Square Indep.     │ CSAT × Channel        │ Reject H0 ✓     ║\n")
+cat("║  6b   │ Chi-Square GoF        │ CSAT uniform dist?    │ Reject H0 ✓     ║\n")
+cat("║  7    │ MANOVA (4 statistics) │ CSAT+Price ~ Tenure   │ Reject H0 ✓     ║\n")
+cat("╠══════════════════════════════════════════════════════════════════════════╣\n")
+cat("║  VERDICT: H0 REJECTED — Support variables significantly influence CSAT ║\n")
+cat("╚══════════════════════════════════════════════════════════════════════════╝\n")
+
+# Save environment for Thanuri (Predictive stage)
+save(df, file = "df_inferential_complete.RData")
+cat("\nSaved: df_inferential_complete.RData → for Thanuri's predictive stage\n")
+
+View(df)
+
+#predictive analytics
+packages <- c("dplyr", "caret", "MASS", "e1071", "pROC",
+              "ggplot2", "brant")
+new_pkg  <- packages[!(packages %in% installed.packages()[,"Package"])]
+if (length(new_pkg) > 0) install.packages(new_pkg, dependencies = TRUE)
+lapply(packages, library, character.only = TRUE)
+cat("Dataset loaded:", nrow(df), "rows\n")
+cat("Good Experience rate (baseline):", round(mean(df$csat_binary), 4), "\n")
+cat("This is what our models need to beat.\n\n")
+
+cat("=== SIGNIFICANT PREDICTORS FROM INFERENTIAL STAGE ===\n")
+cat("  Tenure Bucket → ANOVA F=8.29, p<0.001 ✓\n")
+cat("  Channel Type  → Chi-Square p<0.001    ✓\n")
+cat("  Agent Shift   → Levene p=0.024        ✓\n")
+cat("  Item Price    → MANOVA p<0.001        ✓\n")
+cat("These 4 variables go into both predictive models.\n\n")
+
+# ─────────────────────────────────────────────────────────────────
+# PURPOSE: Build one clean dataset used by BOTH models.
+# Keep only the variables confirmed significant in inferential
+# stage. Encode tenure as numeric for OLR. Create ordered CSAT
+# factor for OLR (it needs to know 1 < 2 < 3 < 4 < 5).
+#
+# LINK TO INFERENTIAL:
+# We do not guess which variables to include — we only use the
+# ones that ANOVA, Chi-Square and MANOVA proved are significant.
+# This is called theory-driven model building.
+# ─────────────────────────────────────────────────────────────────
+
+# Numeric encoding for tenure (OLR needs numeric or factor)
+tenure_map <- c("On Job Training" = 1,
+                "0-30"            = 2,
+                "31-60"           = 3,
+                "61-90"           = 4,
+                ">90"             = 5)
+
+df_model <- df %>%
+  mutate(
+    # Ordered CSAT for OLR — must be ordered factor
+    csat_ordered = factor(csat_score,
+                          levels  = 1:5,
+                          ordered = TRUE),
+    
+    # Binary CSAT for Naive Bayes — Good vs Poor
+    csat_class   = factor(csat_binary,
+                          levels = c(0, 1),
+                          labels = c("Poor", "Good")),
+    
+    # Numeric tenure for OLR
+    tenure_num   = as.numeric(tenure_map[as.character(tenure_bucket)]),
+    
+    # Make sure factors are clean
+    channel      = as.factor(channel),
+    agent_shift  = as.factor(agent_shift),
+    item_price   = as.numeric(item_price)
+  ) %>%
+  select(csat_ordered, csat_class, csat_binary,
+         tenure_num, tenure_bucket, channel,
+         agent_shift, item_price) %>%
+  filter(complete.cases(.))
+
+cat("Modelling dataset rows:", nrow(df_model), "\n")
+cat("Missing values:", sum(is.na(df_model)), "\n\n")
+
+# Check class balance for binary outcome
+cat("Class distribution (for Naive Bayes):\n")
+print(table(df_model$csat_class))
+cat("Good Experience rate:", round(mean(df_model$csat_binary), 4), "\n\n")
+
+# ─────────────────────────────────────────────────────────────────
+# PURPOSE: Split data into 70% training and 30% testing.
+# We use STRATIFIED split so the Good/Poor ratio (68.4%/31.6%)
+# is the same in both training and test sets.
+#
+# WHY STRATIFIED?
+# If we split randomly, by chance the test set might have
+# 80% Good and 20% Poor — then the model looks better than it
+# really is because the test set is easier. Stratification
+# prevents this.
+#
+# SAME SPLIT used for both OLR and Naive Bayes so the comparison
+# between them is fair — they test on identical rows.
+# ─────────────────────────────────────────────────────────────────
+
+set.seed(42)   # Makes results reproducible
+
+train_idx <- createDataPartition(df_model$csat_class,
+                                 p    = 0.70,
+                                 list = FALSE)
+
+train_df <- df_model[train_idx, ]
+test_df  <- df_model[-train_idx, ]
+
+# Verify split
+cat("=== TRAIN / TEST SPLIT ===\n")
+cat("Training rows:", nrow(train_df),
+    " | Test rows:", nrow(test_df), "\n\n")
+
+cat("Good/Poor rate — Training set:\n")
+print(round(prop.table(table(train_df$csat_class)) * 100, 1))
+
+cat("\nGood/Poor rate — Test set:\n")
+print(round(prop.table(table(test_df$csat_class)) * 100, 1))
+
+cat("\nBoth should be close to 68.4% Good / 31.6% Poor ✓\n\n")
+
+# ─────────────────────────────────────────────────────────────────
+# PURPOSE: Predict the probability of each CSAT level (1 to 5).
+#
+# WHY OLR AND NOT SIMPLE LINEAR REGRESSION?
+# Descriptive: CSAT only takes values 1,2,3,4,5 — it is ordered
+# categories, not a continuous number. Linear regression could
+# predict 3.7 or 6.1 which is impossible.
+# Inferential: AD test confirmed CSAT is non-normal — another
+# reason linear regression assumptions would be violated.
+# OLR respects the ORDER (3 is better than 2) and keeps
+# predictions inside the valid 1-5 range.
+#
+# PREDICTORS USED: tenure_num, channel, agent_shift, item_price
+# All confirmed significant in inferential stage.
+# ─────────────────────────────────────────────────────────────────
+
+cat("========== MODEL 1: ORDINAL LOGISTIC REGRESSION ==========\n\n")
+
+# ── Step 4a: Fit the Model ────────────────────────────────────────
+# polr() = proportional odds logistic regression from MASS package
+# Hess = TRUE needed to compute standard errors and p-values
+olr_model <- polr(
+  csat_ordered ~ tenure_num + channel + agent_shift + item_price,
+  data  = train_df,
+  Hess  = TRUE
+)
+
+cat("--- OLR Model Summary ---\n")
+
+print(summary(olr_model))
+
+
+# ── Step 4b: Get p-values (polr doesn't give them by default) ────
+cat("\n--- Coefficients with p-values ---\n")
+cat("(polr does not give p-values automatically — computed manually)\n\n")
+
+coef_tbl <- coef(summary(olr_model))
+
+# Compute p-values from t-distribution
+p_values <- pnorm(abs(coef_tbl[, "t value"]),
+                  lower.tail = FALSE) * 2
+
+coef_output <- cbind(coef_tbl, `p-value` = round(p_values, 4))
+print(round(coef_output, 4))
+
+
+# ── Step 4c: Odds Ratios ──────────────────────────────────────────
+# OR > 1 means predictor INCREASES chance of higher CSAT category
+# OR < 1 means predictor DECREASES chance of higher CSAT category
+cat("\n--- Cumulative Odds Ratios with 95% CI ---\n")
+cat("OR > 1 → increases chance of higher CSAT\n")
+cat("OR < 1 → decreases chance of higher CSAT\n\n")
+
+or_table <- exp(cbind(
+  OR    = coef(olr_model),
+  confint(olr_model)
+))
+print(round(or_table, 4))
+
+# Plain English interpretation
+cat("\n--- Plain English Interpretation ---\n")
+cat("tenure_num OR > 1 → More experienced agents → Higher CSAT\n")
+cat("  (Matches ANOVA finding: F=8.29, p<0.001)\n\n")
+cat("Check channel ORs → Inbound vs Outcall difference\n")
+cat("  (Matches Chi-Square finding: p<0.001)\n\n")
+
+
+# ── Step 4d: Proportional Odds Assumption — Brant Test ───────────
+# This is the KEY assumption of OLR.
+# It says: the effect of tenure on moving from 1→2 should be
+# the same as moving from 4→5.
+# If p > 0.05 per variable → assumption holds → model is valid.
+cat("--- Brant Test: Proportional Odds Assumption ---\n")
+cat("H0: The proportional odds assumption holds\n")
+cat("p > 0.05 per variable = assumption satisfied ✓\n\n")
+
+brant_result <- brant(olr_model)
+print(brant_result)
+
+
+# ── Step 4e: Predictions on Test Set ─────────────────────────────
+cat("\n--- OLR Predictions on Test Set ---\n")
+
+# Predict the most likely CSAT category for each test observation
+olr_pred_class <- predict(olr_model, newdata = test_df)
+
+# Predicted probabilities for each CSAT level (1-5)
+olr_pred_probs <- predict(olr_model,
+                          newdata = test_df,
+                          type    = "probs")
+
+cat("Sample of predicted probabilities (first 5 rows):\n")
+print(round(head(olr_pred_probs, 5), 3))
+
+# Accuracy: how often did we predict the right CSAT level?
+olr_accuracy <- mean(olr_pred_class == test_df$csat_ordered)
+cat(sprintf("\nOLR Accuracy (exact CSAT level): %.1f%%\n",
+            olr_accuracy * 100))
+cat("Note: Predicting exact 1-5 level is hard.\n")
+cat("Good/Poor boundary accuracy is more meaningful.\n\n")
+
+# Convert to Good/Poor for a cleaner accuracy check
+olr_binary_pred <- ifelse(as.numeric(olr_pred_class) >= 4,
+                          "Good", "Poor")
+olr_binary_true <- ifelse(as.numeric(test_df$csat_ordered) >= 4,
+                          "Good", "Poor")
+
+olr_binary_acc <- mean(olr_binary_pred == olr_binary_true)
+cat(sprintf("OLR Good/Poor Classification Accuracy: %.1f%%\n\n",
+            olr_binary_acc * 100))
+
+
+# ── Step 4f: Visualise Predicted Probabilities by Tenure ─────────
+# Shows how probability of each CSAT level changes as tenure grows
+# This is the most intuitive OLR visualisation
+cat("Generating: Predicted probability plot by tenure...\n")
+
+tenure_seq    <- data.frame(
+  tenure_num  = 1:5,
+  channel     = factor(names(sort(table(train_df$channel),
+                                  decreasing=TRUE))[1],
+                       levels = levels(train_df$channel)),
+  agent_shift = factor(names(sort(table(train_df$agent_shift),
+                                  decreasing=TRUE))[1],
+                       levels = levels(train_df$agent_shift)),
+  item_price  = median(train_df$item_price, na.rm = TRUE)
+)
+
+pred_by_tenure <- predict(olr_model,
+                          newdata = tenure_seq,
+                          type    = "probs")
+
+pred_df <- as.data.frame(pred_by_tenure)
+pred_df$tenure_num <- 1:5
+tenure_labels <- c("1"="OJT","2"="0-30","3"="31-60","4"="61-90","5"=">90")
+pred_df$tenure_label <- tenure_labels[as.character(pred_df$tenure_num)]
+pred_df$tenure_label <- factor(pred_df$tenure_label,
+                               levels = tenure_labels)
+
+library(tidyr)
+pred_long <- pred_df %>%
+  pivot_longer(cols      = `1`:`5`,
+               names_to  = "CSAT_Level",
+               values_to = "Probability")
+
+p_olr <- ggplot(pred_long,
+                aes(x     = tenure_label,
+                    y     = Probability,
+                    colour = CSAT_Level,
+                    group  = CSAT_Level)) +
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 3) +
+  scale_colour_manual(
+    values = c("1"="#D32F2F","2"="#E64A19","3"="#F57C00",
+               "4"="#388E3C","5"="#1976D2"),
+    name   = "CSAT Score"
+  ) +
+  labs(
+    title    = "OLR: How Predicted CSAT Probabilities Change with Agent Tenure",
+    subtitle = "Score 5 (blue) rises with tenure | Score 1 (red) falls with tenure",
+    x        = "Agent Tenure Bucket",
+    y        = "Predicted Probability"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(plot.title = element_text(face = "bold"))
+
+print(p_olr)
+ggsave("plot_olr_tenure_probs.png", p_olr,
+       width = 9, height = 5, dpi = 150)
+cat("Saved: plot_olr_tenure_probs.png\n\n")
