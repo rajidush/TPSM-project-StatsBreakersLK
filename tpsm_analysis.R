@@ -997,27 +997,6 @@ df_model <- df %>%
   # NOW filter complete cases — catches NA, Inf-turned-NA, NaN-turned-NA
   filter(complete.cases(.))
 
-cat("=== CLEANED DATASET CHECKS ===\n")
-cat("Rows:", nrow(df_model), "\n\n")
-
-cat("NA counts:\n")
-print(colSums(is.na(df_model)))
-
-cat("\nInf counts:\n")
-print(sapply(df_model, function(x) sum(is.infinite(x))))
-
-cat("\nColumn classes:\n")
-print(sapply(df_model, class))
-
-cat("\nitem_price_scaled summary:\n")
-print(summary(df_model$item_price_scaled))
-
-cat("\ntenure_num unique values:\n")
-print(sort(unique(df_model$tenure_num)))
-
-cat("\nClass distribution:\n")
-print(table(df_model$csat_class))
-cat("Good rate:", round(mean(df_model$csat_binary), 4), "\n\n")
 
 cat("Modelling dataset rows:", nrow(df_model), "\n")
 cat("Missing values:", sum(is.na(df_model)), "\n\n")
